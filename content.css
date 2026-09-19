@@ -1,0 +1,98 @@
+/**
+ * GH Advisory Smash - Content Styles
+ */
+
+.gha-smash-checkbox {
+  width: 18px !important;
+  height: 18px !important;
+  cursor: pointer;
+  accent-color: #238636;
+  transform: scale(1.2);
+  margin: 0 4px;
+}
+
+.gha-smash-checkbox:checked {
+  accent-color: #238636;
+}
+
+.gha-smash-checkbox.primary {
+  accent-color: #d29922 !important;
+}
+
+.gha-smash-checkbox:hover {
+  transform: scale(1.3);
+}
+
+#gha-smash-button {
+  margin-left: 12px;
+  white-space: nowrap;
+  transition: opacity 0.2s, background-color 0.2s;
+}
+
+#gha-smash-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#gha-smash-button:not(:disabled):hover {
+  background-color: var(--color-btn-primary-hover, #2ea043);
+}
+
+/* Row highlighting when selected */
+.Box-row.Box-row--focus-gray.p-0[style*="rgba(35, 134, 54, 0.1)"] {
+  transition: background-color 0.2s, border-left-color 0.2s;
+}
+
+/* Modal styles */
+#gha-smash-modal {
+  animation: fadeIn 0.15s ease-out;
+}
+
+#gha-smash-modal > div {
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Ensure the modal buttons have proper focus styles */
+#gha-smash-cancel:focus,
+#gha-smash-confirm:focus {
+  outline: 2px solid var(--color-accent-fg, #58a6ff);
+  outline-offset: 2px;
+}
+
+/* Checkbox column alignment */
+.Box-row.Box-row--focus-gray.p-0 > div:first-child {
+  min-width: 48px;
+}
+
+/* Selected row count badge */
+.gha-smash-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: white;
+  background-color: var(--color-accent-fg, #58a6ff);
+  border-radius: 10px;
+  margin-left: 8px;
+}

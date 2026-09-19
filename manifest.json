@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "GH Advisory Smash",
+  "version": "0.1.0",
+  "description": "Merge duplicate GitHub Security Advisories with credit roll-up",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["https://github.com/*/security/advisories*", "https://api.github.com/repos/*/security-advisories/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*/security/advisories*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "GH Advisory Smash",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
