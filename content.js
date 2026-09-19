@@ -161,21 +161,74 @@
 
   // --- API Functions ---
 
+  // Fetch with timeout wrapper
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      return response;
+    } finally {
+      clearTimeout(id);
+    }
+  }
+
   async function fetchAdvisoryDetails(ghsaId) {
-    const repoPath = window.location.pathname.split('/').slice(0,3).join('/');
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { type: 'FETCH_ADVISORY', ghsaId, repoPath },
-        response => {
-          if (response.error) reject(new Error(response.error));
-          else resolve(response);
+    const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
+    const url = `https://github.com/${repoPath}/security/advisories/${ghsaId}`;
+
+    try {
+      const response = await fetchWithTimeout(url, {
+        credentials: 'include',
+        headers: { 'Accept': 'text/html' }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const html = await response.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+
+      const credits = [];
+      // Primary credit items
+      doc.querySelectorAll('[data-testid="credit-item"], .credit-item, [data-credit]').forEach(el => {
+        const userLink = el.querySelector('a[href^="/"][data-hovercard-type="user"]');
+        const typeEl = el.querySelector('[data-credit-type], .credit-type');
+        if (userLink) {
+          credits.push({
+            user: userLink.textContent.trim().replace('@', ''),
+            type: typeEl ? typeEl.textContent.trim().toLowerCase() : 'reporter'
+          });
         }
-      );
-    });
+      });
+
+      // Fallback: Credits section - find heading by text content
+      const headings = doc.querySelectorAll('h2, h3');
+      headings.forEach(heading => {
+        if (heading.textContent.trim().toLowerCase().includes('credits')) {
+          const list = heading.parentElement?.querySelector('ul, ol');
+          if (list) {
+            list.querySelectorAll('li').forEach(li => {
+              const userLink = li.querySelector('a[href^="/"][data-hovercard-type="user"]');
+              if (userLink) {
+                const text = li.textContent.toLowerCase();
+                let type = 'reporter';
+                if (text.includes('analyzer')) type = 'analyzer';
+                else if (text.includes('remediation')) type = 'remediation';
+                credits.push({ user: userLink.textContent.trim().replace('@', ''), type });
+              }
+            });
+          }
+        }
+      });
+
+      return { ghsaId, credits };
+    } catch (e) {
+      console.warn(`[GH Advisory Smash] Failed to fetch ${ghsaId}:`, e);
+      return { ghsaId, credits: [] };
+    }
   }
 
   async function mergeAdvisories(primaryId, duplicateIds) {
-    const repoPath = window.location.pathname.split('/').slice(0,3).join('/');
+    const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
 
     // Fetch credits from all duplicates
     const allCredits = new Map(); // user -> { types: Set, ghsaIds: [] }
@@ -214,11 +267,11 @@
     // Execute the merge
     try {
       // 1. Update primary advisory with merged credits
-      await updateAdvisoryCredits(primaryId, mergedCredits);
+      await updateAdvisoryCredits(primaryId, mergedCredits, repoPath);
 
       // 2. Close duplicate advisories
       for (const dupId of duplicateIds) {
-        await closeAdvisory(dupId);
+        await closeAdvisory(dupId, repoPath);
       }
 
       return true;
@@ -229,30 +282,44 @@
     }
   }
 
-  async function updateAdvisoryCredits(ghsaId, credits) {
-    const repoPath = window.location.pathname.split('/').slice(0,3).join('/');
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { type: 'UPDATE_ADVISORY_CREDITS', ghsaId, credits, repoPath },
-        response => {
-          if (response.error) reject(new Error(response.error));
-          else resolve(response);
-        }
-      );
-    });
+  async function updateAdvisoryCredits(ghsaId, credits, repoPath) {
+    const url = `https://api.github.com/repos/${repoPath}/security-advisories/${ghsaId}`;
+    const response = await fetchWithTimeout(url, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: JSON.stringify({ credits })
+    }, 30000);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Failed to update credits: ${err.message || response.statusText}`);
+    }
+    return response.json();
   }
 
-  async function closeAdvisory(ghsaId) {
-    const repoPath = window.location.pathname.split('/').slice(0,3).join('/');
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        { type: 'CLOSE_ADVISORY', ghsaId, repoPath },
-        response => {
-          if (response.error) reject(new Error(response.error));
-          else resolve(response);
-        }
-      );
-    });
+  async function closeAdvisory(ghsaId, repoPath) {
+    const url = `https://api.github.com/repos/${repoPath}/security-advisories/${ghsaId}`;
+    const response = await fetchWithTimeout(url, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      },
+      body: JSON.stringify({ state: 'closed' })
+    }, 30000);
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Failed to close ${ghsaId}: ${err.message || response.statusText}`);
+    }
+    return response.json();
   }
 
   function showConfirmModal({ primaryId, duplicateIds, mergedCredits, duplicateDetails }) {
@@ -365,8 +432,6 @@
   // --- UI Injection ---
 
   function injectCheckboxColumn() {
-    if (checkboxColumnAdded) return;
-
     const list = document.querySelector(SELECTORS.advisoryList);
     if (!list) return;
 
@@ -374,9 +439,13 @@
     const rows = list.querySelectorAll(SELECTORS.advisoryRow);
     if (rows.length === 0) return;
 
+    let addedCount = 0;
     rows.forEach((row, index) => {
       const ghsaId = getGhsaIdFromRow(row);
       if (!ghsaId) return;
+
+      // Skip if already has checkbox
+      if (row.querySelector('.gha-smash-checkbox')) return;
 
       const dragHandle = row.querySelector('.flex-shrink-0.pt-2.tmp-pl-3');
       if (!dragHandle) return;
@@ -391,8 +460,8 @@
         margin-right: 8px;
       `;
 
-      const isPrimary = index === 0; // First row is primary by default
-      const checkbox = createCheckbox(ghsaId, isPrimary && selectedAdvisories.size === 0);
+      const isPrimary = index === 0 && selectedAdvisories.size === 0;
+      const checkbox = createCheckbox(ghsaId, isPrimary);
       checkboxContainer.appendChild(checkbox);
 
       // Insert before the drag handle
@@ -400,10 +469,13 @@
 
       // Adjust the drag handle margin
       dragHandle.style.marginLeft = '0';
+      addedCount++;
     });
 
-    checkboxColumnAdded = true;
-    updateRowHighlighting();
+    if (addedCount > 0) {
+      checkboxColumnAdded = true;
+      updateRowHighlighting();
+    }
   }
 
   function injectSmashButton() {
@@ -468,20 +540,20 @@
     if (!list) return;
 
     const observer = new MutationObserver((mutations) => {
-      let shouldUpdate = false;
+      let hasNewRows = false;
       mutations.forEach(mutation => {
         if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
           mutation.addedNodes.forEach(node => {
             if (node.nodeType === Node.ELEMENT_NODE) {
               if (node.matches(SELECTORS.advisoryRow) || node.querySelector(SELECTORS.advisoryRow)) {
-                shouldUpdate = true;
+                hasNewRows = true;
               }
             }
           });
         }
       });
-      if (shouldUpdate) {
-        checkboxColumnAdded = false;
+      if (hasNewRows) {
+        // Only inject for new rows (injectCheckboxColumn now skips existing)
         injectCheckboxColumn();
         injectSmashButton();
       }
