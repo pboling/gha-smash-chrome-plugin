@@ -1,0 +1,1 @@
+# gha-smash-chrome-plugin
