@@ -6,6 +6,9 @@
 (function() {
   'use strict';
 
+  // Extension version (synced with manifest.json)
+  const EXTENSION_VERSION = '0.2.10';
+
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
   function debugLog(...args) {
@@ -568,7 +571,10 @@
       ">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <h2 style="margin: 0; color: var(--color-fg-default, #e6edf3);">🔨 Smash Advisories</h2>
-          <span style="font-size: 11px; color: var(--color-fg-muted, #8b949e);">${DEBUG ? 'DEBUG MODE' : ''}</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; color: var(--color-fg-muted, #8b949e);">v${EXTENSION_VERSION}</span>
+            <span style="font-size: 11px; color: var(--color-fg-muted, #8b949e);">${DEBUG ? 'DEBUG MODE' : ''}</span>
+          </div>
         </div>
 
         <div style="margin-bottom: 12px; font-size: 13px; color: var(--color-fg-muted, #8b949e);">
