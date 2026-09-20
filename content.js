@@ -51,8 +51,13 @@
 
   function sendCsrfTokenToBackground() {
     const token = extractCsrfToken();
+    debugLog('CSRF token extracted:', token ? 'found' : 'none');
     if (token) {
-      chrome.runtime.sendMessage({ type: 'SET_CSRF_TOKEN', token });
+      chrome.runtime.sendMessage({ type: 'SET_CSRF_TOKEN', token }, (response) => {
+        if (DEBUG) console.log('[CSRF] SET_CSRF_TOKEN response:', response);
+      });
+    } else {
+      if (DEBUG) console.log('[CSRF] No token found');
     }
   }
 
