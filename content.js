@@ -536,6 +536,9 @@
     const count = selectedAdvisories.size;
     smashButton.textContent = count >= 2 ? `Smash (${count})` : 'Smash';
 
+    // Initialize button state from loaded selection
+    updateSmashButton();
+
     smashButton.addEventListener('click', async () => {
       if (selectedAdvisories.size < 2) return;
       if (!primaryAdvisoryId) return;
