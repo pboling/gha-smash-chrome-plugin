@@ -45,8 +45,33 @@
   // --- Utility Functions ---
 
   function extractCsrfToken() {
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    return meta ? meta.content : null;
+    // Try multiple possible meta tag names GitHub uses
+    const selectors = [
+      'meta[name="csrf-token"]',
+      'meta[name="github-token"]',
+      'meta[name="octolytics-dimension-current_user_login"]',
+    ];
+    
+    for (const selector of selectors) {
+      const meta = document.querySelector(selector);
+      if (meta && meta.content) {
+        debugLog('CSRF token found via:', selector);
+        return meta.content;
+      }
+    }
+    
+    // Debug: list all meta tags
+    if (DEBUG) {
+      const allMeta = document.querySelectorAll('meta');
+      const metaInfo = Array.from(allMeta).map(m => ({
+        name: m.getAttribute('name'),
+        property: m.getAttribute('property'),
+        content: m.content ? m.content.substring(0, 20) + '...' : ''
+      }));
+      console.log('[GH Advisory Smash] All meta tags:', metaInfo);
+    }
+    
+    return null;
   }
 
   function sendCsrfTokenToBackground() {

@@ -86,10 +86,10 @@ async function handleApiRequest(message, tabId) {
     options.body = JSON.stringify(body);
   }
 
-  if (DEBUG) console.log('[BG] Fetching:', method, url);
+  if (DEBUG) console.log('[BG] Fetching:', method, url, { headers: requestHeaders, credentials: 'include', hasBody: !!body });
   const response = await fetch(url, options);
 
-  if (DEBUG) console.log('[BG] Fetch response:', response.status, response.ok);
+  if (DEBUG) console.log('[BG] Fetch response:', response.status, response.ok, response.headers.get('content-type'));
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
