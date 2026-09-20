@@ -6,6 +6,12 @@
 (function() {
   'use strict';
 
+  // --- Debug ---
+  const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
+  function debugLog(...args) {
+    if (DEBUG) console.log('[GH Advisory Smash DEBUG]', ...args);
+  }
+
   // --- Configuration ---
   const SELECTORS = {
     advisoryList: 'ul[data-pjax="#repo-content-pjax-container"][data-turbo-frame="repo-content-turbo-frame"]',
@@ -212,13 +218,17 @@
     const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
     const url = `https://github.com/${repoPath}/security/advisories/${ghsaId}`;
 
+    debugLog('Fetching advisory details:', { ghsaId, url });
+
     try {
       const response = await fetchWithTimeout(url, {
         credentials: 'include',
         headers: { 'Accept': 'text/html' }
       });
+      debugLog('Fetch response:', { ghsaId, status: response.status, ok: response.ok });
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       const html = await response.text();
+      debugLog('HTML length:', html.length);
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
 
@@ -255,9 +265,10 @@
         }
       });
 
-      console.log(`[GH Advisory Smash] Fetched ${ghsaId}:`, credits);
+      debugLog('Parsed credits:', { ghsaId, credits });
       return { ghsaId, credits };
     } catch (e) {
+      debugLog('Fetch failed:', { ghsaId, error: e.message });
       console.warn(`[GH Advisory Smash] Failed to fetch ${ghsaId}:`, e);
       return { ghsaId, credits: [] };
     }
@@ -265,57 +276,280 @@
 
   async function mergeAdvisories(primaryId, duplicateIds) {
     const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
+    const ids = [primaryId, ...duplicateIds];
 
-    // Fetch credits from all duplicates
-    const allCredits = new Map(); // user -> { types: Set, ghsaIds: [] }
-    const duplicateDetails = [];
+    // Create and show live modal immediately
+    const modal = createLiveModal(primaryId, duplicateIds);
+    document.body.appendChild(modal);
 
-    for (const id of [primaryId, ...duplicateIds]) {
-      const { credits } = await fetchAdvisoryDetails(id);
-      duplicateDetails.push({ id, credits });
-      credits.forEach(c => {
-        if (!allCredits.has(c.user)) {
-          allCredits.set(c.user, { types: new Set(), ghsaIds: [] });
-        }
-        allCredits.get(c.user).types.add(c.type);
-        allCredits.get(c.user).ghsaIds.push(id);
-      });
+    const logEl = modal.querySelector('#gha-smash-log');
+    const confirmSection = modal.querySelector('#gha-smash-confirm-section');
+    const confirmBtn = modal.querySelector('#gha-smash-confirm');
+    const cancelBtn = modal.querySelector('#gha-smash-cancel');
+
+    function log(msg, type = 'info') {
+      const line = document.createElement('div');
+      line.style.cssText = `
+        font-family: monospace;
+        font-size: 12px;
+        padding: 2px 0;
+        color: ${type === 'error' ? '#f85149' : type === 'warn' ? '#d29922' : type === 'success' ? '#3fb950' : '#8b949e'};
+        border-left: 3px solid ${type === 'error' ? '#f85149' : type === 'warn' ? '#d29922' : type === 'success' ? '#3fb950' : 'transparent'};
+        padding-left: 8px;
+        margin: 2px 0;
+      `;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+      debugLog(msg);
     }
 
-    // Prepare merged credits for primary
-    const mergedCredits = Array.from(allCredits.entries()).map(([user, data]) => ({
-      user,
-      type: data.types.has('remediation') ? 'remediation' :
-            data.types.has('analyzer') ? 'analyzer' :
-            data.types.has('reporter') ? 'reporter' : 'other'
-    }));
+    function showConfirm(duplicateDetails, mergedCredits) {
+      // Hide log, show confirmation summary
+      logEl.style.display = 'none';
+      confirmSection.style.display = 'block';
 
-    // Show confirmation modal
-    const confirmed = await showConfirmModal({
-      primaryId,
-      duplicateIds,
-      mergedCredits,
-      duplicateDetails
-    });
+      const creditsHtml = mergedCredits.map(c =>
+        `<li><strong>@${c.user}</strong> — <code>${c.type}</code> (from ${duplicateDetails.find(d => d.credits.some(cr => cr.user === c.user))?.id || 'multiple'})</li>`
+      ).join('');
 
-    if (!confirmed) return false;
+      confirmSection.innerHTML = `
+        <div style="margin-bottom: 16px; padding: 12px; background: var(--color-neutral-muted, #21262d); border-radius: 6px;">
+          <strong>Primary (keeps open):</strong>
+          <div style="font-family: monospace; margin-top: 4px;">${primaryId}</div>
+          <div style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin-top: 2px;">
+            ${duplicateDetails.find(d => d.id === primaryId)?.credits.map(c => `@${c.user} (${c.type})`).join(', ') || 'No credits'}
+          </div>
+        </div>
 
-    // Execute the merge
+        <div style="margin-bottom: 16px;">
+          <strong>Will be closed & merged:</strong>
+          <ul style="margin: 8px 0; padding-left: 20px;">
+            ${duplicateIds.map(id => {
+              const detail = duplicateDetails.find(d => d.id === id);
+              return `<li><code>${id}</code> — ${detail?.credits.map(c => `@${c.user} (${c.type})`).join(', ') || 'No credits'}</li>`;
+            }).join('')}
+          </ul>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <strong>Merged credits on primary:</strong>
+          <ul style="margin: 8px 0; padding-left: 20px; font-size: 13px;">
+            ${creditsHtml || '<li><em>No credits to merge</em></li>'}
+          </ul>
+        </div>
+
+        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+          <button id="gha-smash-cancel-final" style="
+            padding: 8px 16px;
+            border: 1px solid var(--color-border-default, #30363d);
+            background: transparent;
+            color: var(--color-fg-default, #e6edf3);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+          ">Cancel</button>
+          <button id="gha-smash-confirm-final" style="
+            padding: 8px 16px;
+            border: none;
+            background: var(--color-btn-primary-bg, #238636);
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+          ">Smash ${duplicateIds.length} into ${primaryId}</button>
+        </div>
+      `;
+
+      confirmSection.querySelector('#gha-smash-cancel-final').onclick = () => {
+        modal.remove();
+        resolve(false);
+      };
+
+      confirmSection.querySelector('#gha-smash-confirm-final').onclick = () => {
+        executeMerge(duplicateDetails, mergedCredits);
+      };
+    }
+
+    // Execute the actual merge
+    async function executeMerge(duplicateDetails, mergedCredits) {
+      confirmSection.innerHTML = '<div style="text-align:center; padding: 20px;">Executing merge...</div>';
+      confirmBtn.disabled = true;
+      cancelBtn.disabled = true;
+
+      try {
+        // 1. Update primary advisory with merged credits
+        log(`Updating primary ${primaryId} with merged credits...`, 'info');
+        await updateAdvisoryCredits(primaryId, mergedCredits, repoPath);
+        log(`✓ Primary ${primaryId} credits updated`, 'success');
+
+        // 2. Close duplicate advisories
+        for (const dupId of duplicateIds) {
+          log(`Closing ${dupId}...`, 'info');
+          await closeAdvisory(dupId, repoPath);
+          log(`✓ Closed ${dupId}`, 'success');
+        }
+
+        log('All done! Reloading page...', 'success');
+        setTimeout(() => window.location.reload(), 1500);
+        return true;
+      } catch (e) {
+        log(`✗ Merge failed: ${e.message}`, 'error');
+        const errDetail = e.message.includes('404') ? '\n  → Check: repo path correct? GHSA IDs exist? You have write access?' :
+                         e.message.includes('403') ? '\n  → Check: write access to repo? Token expired?' : '';
+        log(errDetail, 'error');
+        confirmSection.innerHTML = `
+          <div style="color: #f85149; padding: 16px; background: rgba(248,81,73,0.1); border-radius: 6px;">
+            <strong>Merge failed:</strong><br>
+            ${e.message}${errDetail}
+          </div>
+          <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+            <button id="gha-smash-close-error" style="
+              padding: 8px 16px;
+              border: none;
+              background: var(--color-btn-primary-bg, #238636);
+              color: white;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 13px;
+              font-weight: 600;
+            ">Close</button>
+          </div>
+        `;
+        confirmSection.querySelector('#gha-smash-close-error').onclick = () => modal.remove();
+        cancelBtn.disabled = false;
+        return false;
+      }
+    }
+
+    // Start fetching credits
     try {
-      // 1. Update primary advisory with merged credits
-      await updateAdvisoryCredits(primaryId, mergedCredits, repoPath);
+      log('Fetching advisory details...', 'info');
 
-      // 2. Close duplicate advisories
-      for (const dupId of duplicateIds) {
-        await closeAdvisory(dupId, repoPath);
+      const allCredits = new Map();
+      const duplicateDetails = [];
+
+      for (const id of ids) {
+        log(`Fetching ${id}...`, 'info');
+        const { credits } = await fetchAdvisoryDetails(id);
+        duplicateDetails.push({ id, credits });
+        log(`  Found ${credits.length} credit(s): ${credits.map(c => `@${c.user} (${c.type})`).join(', ') || 'none'}`, credits.length ? 'success' : 'warn');
+        credits.forEach(c => {
+          if (!allCredits.has(c.user)) {
+            allCredits.set(c.user, { types: new Set(), ghsaIds: [] });
+          }
+          allCredits.get(c.user).types.add(c.type);
+          allCredits.get(c.user).ghsaIds.push(id);
+        });
       }
 
-      return true;
+      const mergedCredits = Array.from(allCredits.entries()).map(([user, data]) => ({
+        user,
+        type: data.types.has('remediation') ? 'remediation' :
+              data.types.has('analyzer') ? 'analyzer' :
+              data.types.has('reporter') ? 'reporter' : 'other'
+      }));
+
+      log(`Merged credits: ${mergedCredits.map(c => `@${c.user} (${c.type})`).join(', ')}`, 'success');
+      showConfirm(duplicateDetails, mergedCredits);
+
     } catch (e) {
-      console.error('[GH Advisory Smash] Merge failed:', e);
-      alert(`Merge failed: ${e.message}`);
-      return false;
+      log(`✗ Fetch failed: ${e.message}`, 'error');
+      logEl.style.display = 'block';
+      confirmSection.style.display = 'none';
+      throw e;
     }
+
+    return new Promise((resolve) => {
+      cancelBtn.onclick = () => {
+        modal.remove();
+        resolve(false);
+      };
+    });
+  }
+
+  function createLiveModal(primaryId, duplicateIds) {
+    const modal = document.createElement('div');
+    modal.id = 'gha-smash-modal';
+    modal.style.cssText = `
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    `;
+
+    modal.innerHTML = `
+      <div style="
+        background: var(--color-canvas-default, #1e2327);
+        border: 1px solid var(--color-border-default, #30363d);
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 700px;
+        width: 90%;
+        max-height: 80vh;
+        overflow: auto;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        display: flex;
+        flex-direction: column;
+      ">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h2 style="margin: 0; color: var(--color-fg-default, #e6edf3);">🔨 Smash Advisories</h2>
+          <span style="font-size: 11px; color: var(--color-fg-muted, #8b949e);">${DEBUG ? 'DEBUG MODE' : ''}</span>
+        </div>
+
+        <div style="margin-bottom: 12px; font-size: 13px; color: var(--color-fg-muted, #8b949e);">
+          Primary: <code>${primaryId}</code> &nbsp;|&nbsp; Duplicates: ${duplicateIds.map(id => `<code>${id}</code>`).join(', ')}
+        </div>
+
+        <div id="gha-smash-log" style="
+          flex: 1;
+          min-height: 150px;
+          max-height: 400px;
+          overflow: auto;
+          background: #0d1117;
+          border: 1px solid var(--color-border-default, #30363d);
+          border-radius: 6px;
+          padding: 12px;
+          margin-bottom: 16px;
+          font-family: monospace;
+          font-size: 12px;
+          color: #8b949e;
+        ">
+          <div>Initializing...</div>
+        </div>
+
+        <div id="gha-smash-confirm-section" style="display: none;"></div>
+
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <button id="gha-smash-cancel" style="
+            padding: 8px 16px;
+            border: 1px solid var(--color-border-default, #30363d);
+            background: transparent;
+            color: var(--color-fg-default, #e6edf3);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+          ">Cancel</button>
+          <button id="gha-smash-confirm" style="
+            padding: 8px 16px;
+            border: none;
+            background: var(--color-btn-primary-bg, #238636);
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+          " disabled>Confirm</button>
+        </div>
+      </div>
+    `;
+
+    return modal;
   }
 
   async function apiRequest(method, url, body) {
@@ -341,113 +575,6 @@
   async function closeAdvisory(ghsaId, repoPath) {
     const url = `https://api.github.com/repos/${repoPath}/security-advisories/${ghsaId}`;
     return apiRequest('PATCH', url, { state: 'closed' });
-  }
-
-  function showConfirmModal({ primaryId, duplicateIds, mergedCredits, duplicateDetails }) {
-    return new Promise(resolve => {
-      // Remove any existing modal
-      const existing = document.getElementById('gha-smash-modal');
-      if (existing) existing.remove();
-
-      const modal = document.createElement('div');
-      modal.id = 'gha-smash-modal';
-      modal.style.cssText = `
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      `;
-
-      const creditsHtml = mergedCredits.map(c =>
-        `<li><strong>@${c.user}</strong> — <code>${c.type}</code> (from ${duplicateDetails.find(d => d.credits.some(cr => cr.user === c.user))?.id || 'multiple'})</li>`
-      ).join('');
-
-      modal.innerHTML = `
-        <div style="
-          background: var(--color-canvas-default, #1e2327);
-          border: 1px solid var(--color-border-default, #30363d);
-          border-radius: 12px;
-          padding: 24px;
-          max-width: 600px;
-          width: 90%;
-          max-height: 80vh;
-          overflow: auto;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-        ">
-          <h2 style="margin: 0 0 16px; color: var(--color-fg-default, #e6edf3);">🔨 Smash Advisories</h2>
-
-          <div style="margin-bottom: 16px; padding: 12px; background: var(--color-neutral-muted, #21262d); border-radius: 6px;">
-            <strong>Primary (keeps open):</strong>
-            <div style="font-family: monospace; margin-top: 4px;">${primaryId}</div>
-            <div style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin-top: 2px;">
-              ${duplicateDetails.find(d => d.id === primaryId)?.credits.map(c => `@${c.user} (${c.type})`).join(', ') || 'No credits'}
-            </div>
-          </div>
-
-          <div style="margin-bottom: 16px;">
-            <strong>Will be closed & merged:</strong>
-            <ul style="margin: 8px 0; padding-left: 20px;">
-              ${duplicateIds.map(id => {
-                const detail = duplicateDetails.find(d => d.id === id);
-                return `<li><code>${id}</code> — ${detail?.credits.map(c => `@${c.user} (${c.type})`).join(', ') || 'No credits'}</li>`;
-              }).join('')}
-            </ul>
-          </div>
-
-          <div style="margin-bottom: 16px;">
-            <strong>Merged credits on primary:</strong>
-            <ul style="margin: 8px 0; padding-left: 20px; font-size: 13px;">
-              ${creditsHtml || '<li><em>No credits to merge</em></li>'}
-            </ul>
-          </div>
-
-          <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
-            <button id="gha-smash-cancel" style="
-              padding: 8px 16px;
-              border: 1px solid var(--color-border-default, #30363d);
-              background: transparent;
-              color: var(--color-fg-default, #e6edf3);
-              border-radius: 6px;
-              cursor: pointer;
-              font-size: 13px;
-            ">Cancel</button>
-            <button id="gha-smash-confirm" style="
-              padding: 8px 16px;
-              border: none;
-              background: var(--color-btn-primary-bg, #238636);
-              color: white;
-              border-radius: 6px;
-              cursor: pointer;
-              font-size: 13px;
-              font-weight: 600;
-            ">Smash ${duplicateIds.length} into ${primaryId}</button>
-          </div>
-        </div>
-      `;
-
-      document.body.appendChild(modal);
-
-      modal.querySelector('#gha-smash-cancel').onclick = () => {
-        modal.remove();
-        resolve(false);
-      };
-
-      modal.querySelector('#gha-smash-confirm').onclick = () => {
-        modal.remove();
-        resolve(true);
-      };
-
-      modal.onclick = (e) => {
-        if (e.target === modal) {
-          modal.remove();
-          resolve(false);
-        }
-      };
-    });
   }
 
   // --- UI Injection ---
