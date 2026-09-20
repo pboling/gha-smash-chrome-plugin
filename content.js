@@ -12,6 +12,15 @@
     if (DEBUG) console.log('[GH Advisory Smash DEBUG]', ...args);
   }
 
+  // Enable debug in background worker if URL flag is set
+  if (DEBUG) {
+    chrome.runtime.sendMessage({ type: 'SET_DEBUG', enabled: true }, (response) => {
+      if (response?.ok) {
+        console.log('[GH Advisory Smash] Debug mode enabled in background worker');
+      }
+    });
+  }
+
   // --- Configuration ---
   const SELECTORS = {
     advisoryList: 'ul[data-pjax="#repo-content-pjax-container"][data-turbo-frame="repo-content-turbo-frame"]',
@@ -276,6 +285,7 @@
 
   async function mergeAdvisories(primaryId, duplicateIds) {
     const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
+    debugLog('repoPath extracted:', { repoPath, pathname: window.location.pathname });
     const ids = [primaryId, ...duplicateIds];
 
     // Create and show live modal immediately
@@ -555,14 +565,17 @@
   }
 
   async function apiRequest(method, url, body) {
+    debugLog(`API Request: ${method} ${url}`, body ? { body } : '');
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage({
         type: 'API_REQUEST',
         payload: { method, url, body }
       }, (response) => {
         if (response?.error) {
+          debugLog(`API Error: ${response.error}`);
           reject(new Error(response.error));
         } else {
+          debugLog(`API Success: ${method} ${url}`, response);
           resolve(response);
         }
       });
