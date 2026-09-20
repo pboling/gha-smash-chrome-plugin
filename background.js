@@ -73,7 +73,8 @@ async function handleApiRequest(message, tabId) {
   };
 
   if (csrfToken) {
-    requestHeaders['X-CSRF-Token'] = csrfToken;
+    // GitHub uses GitHub-Nonce header for fetch-nonce
+    requestHeaders['GitHub-Nonce'] = csrfToken;
   }
 
   const options = {

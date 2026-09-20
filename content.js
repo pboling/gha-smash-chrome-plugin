@@ -46,7 +46,10 @@
 
   function extractCsrfToken() {
     // Try multiple possible meta tag names GitHub uses
+    // fetch-nonce is the modern GitHub auth token for fetch requests
     const selectors = [
+      'meta[name="fetch-nonce"]',
+      'meta[name="html-safe-nonce"]',
       'meta[name="csrf-token"]',
       'meta[name="github-token"]',
       'meta[name="octolytics-dimension-current_user_login"]',
@@ -55,19 +58,27 @@
     for (const selector of selectors) {
       const meta = document.querySelector(selector);
       if (meta && meta.content) {
-        debugLog('CSRF token found via:', selector);
+        debugLog('Auth token found via:', selector, meta.content.substring(0, 20) + '...');
         return meta.content;
       }
     }
     
-    // Debug: list all meta tags
+    // Debug: list all meta tags with their names/properties
     if (DEBUG) {
       const allMeta = document.querySelectorAll('meta');
       const metaInfo = Array.from(allMeta).map(m => ({
         name: m.getAttribute('name'),
         property: m.getAttribute('property'),
-        content: m.content ? m.content.substring(0, 20) + '...' : ''
+        content: m.content ? m.content.substring(0, 50) + '...' : ''
       }));
+      
+      // Also look for any meta with "token", "auth", "csrf", "github", "nonce" in name/property
+      const authMeta = metaInfo.filter(m => 
+        (m.name && /token|auth|csrf|github|nonce/i.test(m.name)) ||
+        (m.property && /token|auth|csrf|github|nonce/i.test(m.property))
+      );
+      
+      console.log('[GH Advisory Smash] Auth-related meta tags:', authMeta);
       console.log('[GH Advisory Smash] All meta tags:', metaInfo);
     }
     
@@ -322,6 +333,16 @@
     if (pathParts[0] === '') pathParts.shift();
     const repoPath = pathParts.slice(0, 2).join('/');
     debugLog('repoPath extracted:', { repoPath, pathname: window.location.pathname });
+
+    // Early abort: check if we have an auth token before proceeding
+    const authToken = extractCsrfToken();
+    if (!authToken) {
+      const errorMsg = 'No authentication token found on page (fetch-nonce, html-safe-nonce, or csrf-token meta tags missing). Cannot proceed with API calls.';
+      debugLog('Early abort:', errorMsg);
+      alert(errorMsg);
+      return false;
+    }
+
     const ids = [primaryId, ...duplicateIds];
 
     // Create and show live modal immediately
