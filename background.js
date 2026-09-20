@@ -110,4 +110,4 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // Debug flag from extension
-const DEBUG = false;
+let DEBUG = false;
