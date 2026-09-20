@@ -224,7 +224,10 @@
   }
 
   async function fetchAdvisoryDetails(ghsaId) {
-    const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
+    const pathParts = window.location.pathname.split('/');
+    // Remove leading empty string from split
+    if (pathParts[0] === '') pathParts.shift();
+    const repoPath = pathParts.slice(0, 2).join('/');
     const url = `https://github.com/${repoPath}/security/advisories/${ghsaId}`;
 
     debugLog('Fetching advisory details:', { ghsaId, url });
@@ -284,7 +287,10 @@
   }
 
   async function mergeAdvisories(primaryId, duplicateIds) {
-    const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
+    const pathParts = window.location.pathname.split('/');
+    // Remove leading empty string from split
+    if (pathParts[0] === '') pathParts.shift();
+    const repoPath = pathParts.slice(0, 2).join('/');
     debugLog('repoPath extracted:', { repoPath, pathname: window.location.pathname });
     const ids = [primaryId, ...duplicateIds];
 
