@@ -1,14 +1,11 @@
 /**
  * GH Advisory Smash - Background Service Worker
- * Handles GitHub API calls (cross-origin) and CSRF token storage
+ * Handles GitHub API calls (cross-origin) using PAT authentication
  */
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[GH Advisory Smash] Extension installed');
 });
-
-// Store CSRF tokens per tab
-const csrfTokens = new Map();
 
 // Cache for PAT (refreshed periodically)
 let patCache = null;
@@ -36,24 +33,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (DEBUG) console.log('[BG] Received message:', message.type, sender.tab?.id);
   
   switch (message.type) {
-    case 'GET_CSRF_TOKEN': {
-      const tabId = sender.tab?.id;
-      const token = tabId ? csrfTokens.get(tabId) : null;
-      if (DEBUG) console.log('[BG] GET_CSRF_TOKEN:', tabId, token ? 'found' : 'none');
-      sendResponse({ token });
-      break;
-    }
-
-    case 'SET_CSRF_TOKEN': {
-      const tabId = sender.tab?.id;
-      if (tabId && message.token) {
-        csrfTokens.set(tabId, message.token);
-        if (DEBUG) console.log('[BG] SET_CSRF_TOKEN for tab', tabId);
-      }
-      sendResponse({ ok: true });
-      break;
-    }
-
     case 'SET_DEBUG': {
       DEBUG = message.enabled === true;
       if (DEBUG) console.log('[BG] Debug mode enabled');
@@ -82,14 +61,9 @@ async function handleApiRequest(message, sender) {
   if (DEBUG) console.log('[BG] Handling API request:', message.payload);
   const { method, url, body, headers = {} } = message.payload;
 
-  // Get PAT (Personal Access Token) - primary auth for REST API
+  // Get PAT (Personal Access Token) - REQUIRED for GitHub REST API
   const pat = await getPat();
   if (DEBUG) console.log('[BG] PAT for API:', pat ? 'found' : 'none');
-
-  // Get CSRF token for this tab if available (fallback)
-  const tabId = sender?.tab?.id;
-  const csrfToken = tabId ? csrfTokens.get(tabId) : null;
-  if (DEBUG) console.log('[BG] CSRF token for tab', tabId, csrfToken ? 'found' : 'none');
 
   const requestHeaders = {
     'Accept': 'application/vnd.github+json',
@@ -98,19 +72,14 @@ async function handleApiRequest(message, sender) {
     ...headers
   };
 
-  // Priority: PAT > CSRF token
-  if (pat) {
-    requestHeaders['Authorization'] = `Bearer ${pat}`;
-    if (DEBUG) console.log('[BG] Using PAT for authentication');
-  } else if (csrfToken) {
-    // Fallback: try CSRF/fetch-nonce
-    requestHeaders['GitHub-Nonce'] = csrfToken;
-    requestHeaders['X-CSRF-Token'] = csrfToken;
-    requestHeaders['Authorization'] = `Bearer ${csrfToken}`;
-    if (DEBUG) console.log('[BG] Using fetch-nonce as fallback');
-  } else {
-    if (DEBUG) console.log('[BG] No authentication available');
+  if (!pat) {
+    const error = new Error('NO_PAT: GitHub Personal Access Token required. Save a PAT with "repo" scope in the extension popup.');
+    if (DEBUG) console.log('[BG] No PAT configured');
+    throw error;
   }
+
+  requestHeaders['Authorization'] = `Bearer ${pat}`;
+  if (DEBUG) console.log('[BG] Using PAT for authentication');
 
   const options = {
     method: method || 'GET',

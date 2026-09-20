@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-  const EXTENSION_VERSION = '0.2.10';
+  const EXTENSION_VERSION = '0.2.11';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
@@ -44,61 +44,6 @@
   let primaryAdvisoryId = null; // Explicitly stored primary GHSA ID
   let smashButton = null;
   let checkboxColumnAdded = false;
-
-  // --- Utility Functions ---
-
-  function extractCsrfToken() {
-    // Try multiple possible meta tag names GitHub uses
-    // fetch-nonce is the modern GitHub auth token for fetch requests
-    const selectors = [
-      'meta[name="fetch-nonce"]',
-      'meta[name="html-safe-nonce"]',
-      'meta[name="csrf-token"]',
-      'meta[name="github-token"]',
-      'meta[name="octolytics-dimension-current_user_login"]',
-    ];
-    
-    for (const selector of selectors) {
-      const meta = document.querySelector(selector);
-      if (meta && meta.content) {
-        debugLog('Auth token found via:', selector, meta.content.substring(0, 20) + '...');
-        return meta.content;
-      }
-    }
-    
-    // Debug: list all meta tags with their names/properties
-    if (DEBUG) {
-      const allMeta = document.querySelectorAll('meta');
-      const metaInfo = Array.from(allMeta).map(m => ({
-        name: m.getAttribute('name'),
-        property: m.getAttribute('property'),
-        content: m.content ? m.content.substring(0, 50) + '...' : ''
-      }));
-      
-      // Also look for any meta with "token", "auth", "csrf", "github", "nonce" in name/property
-      const authMeta = metaInfo.filter(m => 
-        (m.name && /token|auth|csrf|github|nonce/i.test(m.name)) ||
-        (m.property && /token|auth|csrf|github|nonce/i.test(m.property))
-      );
-      
-      console.log('[GH Advisory Smash] Auth-related meta tags:', authMeta);
-      console.log('[GH Advisory Smash] All meta tags:', metaInfo);
-    }
-    
-    return null;
-  }
-
-  function sendCsrfTokenToBackground() {
-    const token = extractCsrfToken();
-    debugLog('CSRF token extracted:', token ? 'found' : 'none');
-    if (token) {
-      chrome.runtime.sendMessage({ type: 'SET_CSRF_TOKEN', token }, (response) => {
-        if (DEBUG) console.log('[CSRF] SET_CSRF_TOKEN response:', response);
-      });
-    } else {
-      if (DEBUG) console.log('[CSRF] No token found');
-    }
-  }
 
   function getGhsaIdFromRow(row) {
     const link = row.querySelector(SELECTORS.advisoryTitleLink);
@@ -337,15 +282,6 @@
     const repoPath = pathParts.slice(0, 2).join('/');
     debugLog('repoPath extracted:', { repoPath, pathname: window.location.pathname });
 
-    // Early abort: check if we have an auth token before proceeding
-    const authToken = extractCsrfToken();
-    if (!authToken) {
-      const errorMsg = 'No authentication token found on page (fetch-nonce, html-safe-nonce, or csrf-token meta tags missing). Cannot proceed with API calls.';
-      debugLog('Early abort:', errorMsg);
-      alert(errorMsg);
-      return false;
-    }
-
     const ids = [primaryId, ...duplicateIds];
 
     // Create and show live modal immediately
@@ -468,14 +404,51 @@
         return true;
       } catch (e) {
         log(`✗ Merge failed: ${e.message}`, 'error');
-        const errDetail = e.message.includes('404') ? '\n  → Check: repo path correct? GHSA IDs exist? You have write access?' :
-                         e.message.includes('403') ? '\n  → Check: write access to repo? Token expired?' : '';
+        
+        // Handle specific error types with actionable guidance
+        let errDetail = '';
+        let errAction = '';
+        
+        if (e.message.startsWith('NO_PAT:')) {
+          errDetail = 'GitHub Personal Access Token not configured.';
+          errAction = `
+            <div style="margin-top: 16px; padding: 16px; background: rgba(210,153,34,0.1); border-radius: 6px; border: 1px solid #d29922;">
+              <strong>🔑 Action Required:</strong> No GitHub PAT configured.
+              <ol style="margin: 12px 0; padding-left: 20px; font-size: 13px;">
+                <li>Open extension popup (click extension icon in toolbar)</li>
+                <li>Paste your PAT in the "GitHub API Token" field</li>
+                <li>Click <strong>Save</strong></li>
+                <li>Retry the Smash operation</li>
+              </ol>
+              <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 8px 0 0;">
+                Create PAT at: <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a> (select <code>repo</code> scope)
+              </p>
+            </div>
+          `;
+        } else if (e.message.includes('404')) {
+          errDetail = 'Check: repo path correct? GHSA IDs exist? You have write access?';
+        } else if (e.message.includes('403') || e.message.includes('401')) {
+          errDetail = 'Check: write access to repo? Token expired or invalid?';
+          errAction = `
+            <div style="margin-top: 16px; padding: 16px; background: rgba(248,81,73,0.1); border-radius: 6px; border: 1px solid #f85149;">
+              <strong>🔑 Token Issue:</strong> The PAT may be invalid, expired, or missing <code>repo</code> scope.
+              <ol style="margin: 12px 0; padding-left: 20px; font-size: 13px;">
+                <li>Verify PAT at <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a></li>
+                <li>Ensure <code>repo</code> scope is checked</li>
+                <li>Regenerate token if expired</li>
+                <li>Re-enter in extension popup</li>
+              </ol>
+            </div>
+          `;
+        }
+        
         log(errDetail, 'error');
         confirmSection.innerHTML = `
           <div style="color: #f85149; padding: 16px; background: rgba(248,81,73,0.1); border-radius: 6px;">
             <strong>Merge failed:</strong><br>
-            ${e.message}${errDetail}
+            ${e.message.replace('NO_PAT: ', '')}
           </div>
+          ${errAction}
           <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
             <button id="gha-smash-close-error" style="
               padding: 8px 16px;
@@ -796,7 +769,6 @@
 
   function init() {
     loadSelection();
-    sendCsrfTokenToBackground();
 
     // Handle messages from popup
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
