@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-  const EXTENSION_VERSION = '0.2.13';
+  const EXTENSION_VERSION = '0.2.14';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
@@ -292,17 +292,7 @@
 
     const ids = [primaryId, ...duplicateIds];
 
-    // Create and show live modal immediately
-    const modal = createLiveModal(primaryId, duplicateIds);
-    document.body.appendChild(modal);
-
-    const logEl = modal.querySelector('#gha-smash-log');
-    const confirmSection = modal.querySelector('#gha-smash-confirm-section');
-    const footerEl = modal.querySelector('#gha-smash-footer');
-    const confirmBtn = modal.querySelector('#gha-smash-confirm');
-    const cancelBtn = modal.querySelector('#gha-smash-cancel');
-
-    // Pre-flight PAT check: show instructions in modal if not configured
+    // Pre-flight PAT check: NO requests if PAT not configured
     const hasPat = await new Promise(resolve => {
       chrome.runtime.sendMessage({ type: 'CHECK_PAT' }, response => {
         resolve(response?.hasPat === true);
@@ -310,6 +300,16 @@
     });
 
     if (!hasPat) {
+      // Show modal with instructions only - no fetch requests, no confirm handler that makes requests
+      const modal = createLiveModal(primaryId, duplicateIds);
+      document.body.appendChild(modal);
+
+      const logEl = modal.querySelector('#gha-smash-log');
+      const confirmSection = modal.querySelector('#gha-smash-confirm-section');
+      const footerEl = modal.querySelector('#gha-smash-footer');
+      const confirmBtn = modal.querySelector('#gha-smash-confirm');
+      const cancelBtn = modal.querySelector('#gha-smash-cancel');
+
       logEl.innerHTML = `
         <div style="color: #d29922; padding: 16px; background: rgba(210,153,34,0.1); border-radius: 6px; border: 1px solid #d29922;">
           <strong>🔑 GitHub Personal Access Token Required</strong>
@@ -334,7 +334,20 @@
       confirmBtn.disabled = true;
       confirmBtn.style.opacity = '0.5';
       confirmBtn.style.cursor = 'not-allowed';
+      cancelBtn.onclick = () => modal.remove();
+      return false;
     }
+
+    // PAT exists - proceed with normal flow
+    // Create and show live modal immediately
+    const modal = createLiveModal(primaryId, duplicateIds);
+    document.body.appendChild(modal);
+
+    const logEl = modal.querySelector('#gha-smash-log');
+    const confirmSection = modal.querySelector('#gha-smash-confirm-section');
+    const footerEl = modal.querySelector('#gha-smash-footer');
+    const confirmBtn = modal.querySelector('#gha-smash-confirm');
+    const cancelBtn = modal.querySelector('#gha-smash-cancel');
 
     function log(msg, type = 'info') {
       const line = document.createElement('div');
