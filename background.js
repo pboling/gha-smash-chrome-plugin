@@ -92,6 +92,15 @@ async function handleApiRequest(message, tabId) {
 
   if (DEBUG) console.log('[BG] Fetch response:', response.status, response.ok, response.headers.get('content-type'));
 
+  // Also send response info back to content script for unified debugging
+  if (sender && sender.tab) {
+    chrome.runtime.sendMessage({
+      type: 'DEBUG_LOG',
+      message: `[BG] ${method} ${url} → ${response.status} ${response.ok ? 'OK' : 'FAIL'}`,
+      headers: requestHeaders
+    }).catch(() => {}); // Ignore if no listener
+  }
+
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     const errorMsg = `${err.message || response.statusText} (${response.status})`;

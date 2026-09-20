@@ -798,6 +798,12 @@
         sendResponse({ selectedCount: selectedAdvisories.size });
         return true;
       }
+      if (message.type === 'DEBUG_LOG' && DEBUG) {
+        console.log('[GH Advisory Smash DEBUG]', message.message);
+        if (message.headers) {
+          console.log('[GH Advisory Smash DEBUG] Request headers:', message.headers);
+        }
+      }
     });
 
     // Wait for the advisory list to be present
