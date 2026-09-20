@@ -21,52 +21,85 @@
   const STORAGE_KEY = 'gha-smash-selected';
   const PRIMARY_KEY = 'gha-smash-primary';
 
-    // --- State ---
-    let selectedAdvisories = new Set();
-    let primaryAdvisoryId = null; // Explicitly stored primary GHSA ID
-    let smashButton = null;
-    let checkboxColumnAdded = false;
+  // --- State ---
+  let selectedAdvisories = new Set();
+  let primaryAdvisoryId = null; // Explicitly stored primary GHSA ID
+  let smashButton = null;
+  let checkboxColumnAdded = false;
 
-    // --- Utility Functions ---
+  // --- Utility Functions ---
 
-    function extractCsrfToken() {
-      const meta = document.querySelector('meta[name="csrf-token"]');
-      return meta ? meta.content : null;
+  function extractCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : null;
+  }
+
+  function sendCsrfTokenToBackground() {
+    const token = extractCsrfToken();
+    if (token) {
+      chrome.runtime.sendMessage({ type: 'SET_CSRF_TOKEN', token });
     }
+  }
 
-    function sendCsrfTokenToBackground() {
-      const token = extractCsrfToken();
-      if (token) {
-        chrome.runtime.sendMessage({ type: 'SET_CSRF_TOKEN', token });
+  function getGhsaIdFromRow(row) {
+    const link = row.querySelector(SELECTORS.advisoryTitleLink);
+    if (!link) return null;
+    const match = link.href.match(/\/GHSA-[a-z0-9-]+/);
+    return match ? match[0].substring(1) : null; // Remove leading slash
+  }
+
+  function getAdvisoryData(row) {
+    const ghsaId = getGhsaIdFromRow(row);
+    if (!ghsaId) return null;
+
+    const titleLink = row.querySelector(SELECTORS.advisoryTitleLink);
+    const title = titleLink ? titleLink.textContent.trim() : '';
+
+    const metaDiv = row.querySelector(SELECTORS.advisoryGhsaId);
+    const metaText = metaDiv ? metaDiv.textContent.trim() : '';
+
+    const stateBadge = row.querySelector(SELECTORS.advisoryStateBadge);
+    const state = stateBadge ? stateBadge.textContent.trim() : '';
+
+    // Extract severity from the second badge
+    const badges = row.querySelectorAll('span.Label');
+    let severity = '';
+    badges.forEach(badge => {
+      const text = badge.textContent.trim();
+      if (['Critical', 'High', 'Moderate', 'Low'].includes(text)) {
+        severity = text;
       }
-    }
+    });
 
-    function saveSelection() {
-      const ids = Array.from(selectedAdvisories);
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
-      if (primaryAdvisoryId) {
-        sessionStorage.setItem(PRIMARY_KEY, primaryAdvisoryId);
+    return { ghsaId, title, metaText, state, severity, row };
+  }
+
+  function saveSelection() {
+    const ids = Array.from(selectedAdvisories);
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    if (primaryAdvisoryId) {
+      sessionStorage.setItem(PRIMARY_KEY, primaryAdvisoryId);
+    } else {
+      sessionStorage.removeItem(PRIMARY_KEY);
+    }
+  }
+
+  function loadSelection() {
+    try {
+      const stored = sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        selectedAdvisories = new Set(JSON.parse(stored));
+      }
+      const storedPrimary = sessionStorage.getItem(PRIMARY_KEY);
+      if (storedPrimary && selectedAdvisories.has(storedPrimary)) {
+        primaryAdvisoryId = storedPrimary;
       } else {
-        sessionStorage.removeItem(PRIMARY_KEY);
+        primaryAdvisoryId = null;
       }
+    } catch (e) {
+      console.warn('[GH Advisory Smash] Failed to load selection:', e);
     }
-
-    function loadSelection() {
-      try {
-        const stored = sessionStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          selectedAdvisories = new Set(JSON.parse(stored));
-        }
-        const storedPrimary = sessionStorage.getItem(PRIMARY_KEY);
-        if (storedPrimary && selectedAdvisories.has(storedPrimary)) {
-          primaryAdvisoryId = storedPrimary;
-        } else {
-          primaryAdvisoryId = null;
-        }
-      } catch (e) {
-        console.warn('[GH Advisory Smash] Failed to load selection:', e);
-      }
-    }
+  }
 
   function updateSmashButton() {
     if (!smashButton) return;
@@ -77,7 +110,7 @@
     smashButton.title = count >= 2
       ? `Merge ${count} selected advisories into the first one`
       : 'Select at least 2 advisories to merge';
-    
+
     // Notify popup of selection change
     chrome.runtime.sendMessage({ type: 'SELECTION_CHANGED', count });
   }
@@ -443,7 +476,7 @@
     if (rows.length === 0) return;
 
     let addedCount = 0;
-    rows.forEach((row, index) => {
+    rows.forEach((row) => {
       const ghsaId = getGhsaIdFromRow(row);
       if (!ghsaId) return;
 
