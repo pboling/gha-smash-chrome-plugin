@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-    const EXTENSION_VERSION = '0.2.18';
+    const EXTENSION_VERSION = '0.2.19';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
@@ -38,6 +38,30 @@
 
   const STORAGE_KEY = 'gha-smash-selected';
   const PRIMARY_KEY = 'gha-smash-primary';
+
+  // Get current advisory state from URL (triage, draft, published, closed)
+  function getCurrentState() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('state') || 'triage';
+  }
+
+  function getStateStorageKeys() {
+    const state = getCurrentState();
+    return {
+      selected: `${STORAGE_KEY}-${state}`,
+      primary: `${PRIMARY_KEY}-${state}`
+    };
+  }
+
+  // Clear selection for a specific state
+  function clearSelectionForState(state) {
+    const keys = state ? {
+      selected: `${STORAGE_KEY}-${state}`,
+      primary: `${PRIMARY_KEY}-${state}`
+    } : getStateStorageKeys();
+    sessionStorage.removeItem(keys.selected);
+    sessionStorage.removeItem(keys.primary);
+  }
 
   // --- State ---
   let selectedAdvisories = new Set();
@@ -80,11 +104,12 @@
 
   function saveSelection() {
     const ids = Array.from(selectedAdvisories);
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    const keys = getStateStorageKeys();
+    sessionStorage.setItem(keys.selected, JSON.stringify(ids));
     if (primaryAdvisoryId) {
-      sessionStorage.setItem(PRIMARY_KEY, primaryAdvisoryId);
+      sessionStorage.setItem(keys.primary, primaryAdvisoryId);
     } else {
-      sessionStorage.removeItem(PRIMARY_KEY);
+      sessionStorage.removeItem(keys.primary);
     }
   }
 
@@ -98,11 +123,12 @@
 
   function loadSelection() {
     try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
+      const keys = getStateStorageKeys();
+      const stored = sessionStorage.getItem(keys.selected);
       if (stored) {
         selectedAdvisories = new Set(JSON.parse(stored));
       }
-      const storedPrimary = sessionStorage.getItem(PRIMARY_KEY);
+      const storedPrimary = sessionStorage.getItem(keys.primary);
       if (storedPrimary && selectedAdvisories.has(storedPrimary)) {
         primaryAdvisoryId = storedPrimary;
       } else {
@@ -455,6 +481,8 @@
         }
 
         log('All done! Reloading page...', 'success');
+        // Clear selection for current state after successful smash
+        clearSelectionForState();
         setTimeout(() => window.location.reload(), 1500);
         return true;
       } catch (e) {
@@ -857,6 +885,35 @@
 
   function init() {
     loadSelection();
+
+    // Watch for state changes (tab switches) - GitHub uses Turbo/PJAX
+    let lastState = getCurrentState();
+    const stateObserver = new MutationObserver(() => {
+      const currentState = getCurrentState();
+      if (currentState !== lastState) {
+        console.log('[GH Advisory Smash] State changed:', lastState, '->', currentState);
+        // Clear selection for the old state
+        clearSelectionForState(lastState);
+        // Reset current selection
+        selectedAdvisories.clear();
+        primaryAdvisoryId = null;
+        lastState = currentState;
+        // Reload selection for new state
+        loadSelection();
+        // Update UI
+        injectCheckboxColumn();
+        updateSmashButton();
+      }
+    });
+
+    // Observe the segmented control (tab navigation) for state changes
+    const segmentedControl = document.querySelector(SELECTORS.segmentedControl);
+    if (segmentedControl) {
+      stateObserver.observe(segmentedControl, { childList: true, subtree: true, attributes: true });
+    } else {
+      // Fallback: observe document for URL changes
+      stateObserver.observe(document.documentElement, { childList: true, subtree: true });
+    }
 
     // Handle messages from popup
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
