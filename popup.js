@@ -10,6 +10,7 @@ const pageUrlEl = document.getElementById('pageUrl');
 const selectedCountEl = document.getElementById('selectedCount');
 const patInput = document.getElementById('patInput');
 const patSaveBtn = document.getElementById('patSaveBtn');
+const patClearBtn = document.getElementById('patClearBtn');
 const patStatus = document.getElementById('patStatus');
 
 function updateStatus(active, message) {
@@ -47,10 +48,35 @@ async function savePat() {
     return;
   }
   try {
+    // Validate token by calling GitHub API
+    setPatStatus('Validating token...', 'muted');
+    patSaveBtn.disabled = true;
+    patSaveBtn.textContent = 'Validating...';
+    
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28'
+      }
+    });
+    
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || `HTTP ${response.status}`);
+    }
+    
+    const user = await response.json();
     await chrome.storage.sync.set({ github_pat: token });
-    setPatStatus('Token saved ✓', 'valid');
+    setPatStatus(`Token saved ✓ (validated as @${user.login})`, 'valid');
+    
+    // Notify background to clear cache
+    chrome.runtime.sendMessage({ type: 'CLEAR_PAT_CACHE' });
   } catch (e) {
-    setPatStatus('Error saving token', 'invalid');
+    setPatStatus(`Invalid token: ${e.message}`, 'invalid');
+  } finally {
+    patSaveBtn.disabled = false;
+    patSaveBtn.textContent = 'Save';
   }
 }
 
@@ -58,6 +84,25 @@ patSaveBtn.addEventListener('click', savePat);
 patInput.addEventListener('keypress', (e) => {
   if (e.key === 'Enter') savePat();
 });
+
+async function clearPat() {
+  try {
+    patClearBtn.disabled = true;
+    patClearBtn.textContent = 'Clearing...';
+    await chrome.storage.sync.remove(['github_pat']);
+    patInput.value = '';
+    setPatStatus('Token cleared', 'muted');
+    // Notify background to clear cache
+    chrome.runtime.sendMessage({ type: 'CLEAR_PAT_CACHE' });
+  } catch (e) {
+    setPatStatus('Error clearing token', 'invalid');
+  } finally {
+    patClearBtn.disabled = false;
+    patClearBtn.textContent = 'Clear';
+  }
+}
+
+patClearBtn.addEventListener('click', clearPat);
 
 async function getTabInfo() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

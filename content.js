@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-    const EXTENSION_VERSION = '0.2.19';
+    const EXTENSION_VERSION = '0.2.20';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');

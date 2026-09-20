@@ -49,6 +49,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // async response
     }
 
+    case 'CLEAR_PAT_CACHE': {
+      // Clear in-memory PAT cache (triggered after save/clear in popup)
+      patCache = null;
+      patCacheTime = 0;
+      if (DEBUG) console.log('[BG] PAT cache cleared');
+      sendResponse({ ok: true });
+      break;
+    }
+
     case 'API_REQUEST': {
       // Forward API request to GitHub API from background (avoids CORS)
       handleApiRequest(message, sender).then(sendResponse).catch(err => {
