@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-  const EXTENSION_VERSION = '0.2.15';
+    const EXTENSION_VERSION = '0.2.18';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
@@ -471,12 +471,17 @@
               <strong>🔑 Action Required:</strong> No GitHub PAT configured.
               <ol style="margin: 12px 0; padding-left: 20px; font-size: 13px;">
                 <li>Open extension popup (click extension icon in toolbar)</li>
-                <li>Paste your PAT in the "GitHub API Token" field</li>
+                <li>Paste your PAT in the <strong>GitHub API Token</strong> field</li>
                 <li>Click <strong>Save</strong></li>
                 <li>Retry the Smash operation</li>
               </ol>
               <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 8px 0 0;">
-                Create PAT at: <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a> (select <code>repo</code> scope)
+                Create PAT at: <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a>
+              </p>
+              <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 4px 0 0;">
+                <strong>Required permissions:</strong><br>
+                • <strong>Classic PAT:</strong> <code>repo</code> scope<br>
+                • <strong>Fine-grained PAT:</strong> Repository security advisories permission set to <strong>Read and write</strong>
               </p>
             </div>
           `;
@@ -487,13 +492,18 @@
               <strong>🔑 Token Expired:</strong> Your PAT has expired or was revoked.
               <ol style="margin: 12px 0; padding-left: 20px; font-size: 13px;">
                 <li>Go to <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a></li>
-                <li>Regenerate or create a new PAT with <code>repo</code> scope</li>
+                <li>Regenerate or create a new PAT</li>
                 <li>Open extension popup and paste the new PAT</li>
                 <li>Click <strong>Save</strong></li>
                 <li>Click <strong>Smash</strong> again to retry</li>
               </ol>
               <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 8px 0 0;">
                 The old token has been cleared from the extension automatically.
+              </p>
+              <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 4px 0 0;">
+                <strong>Required permissions:</strong><br>
+                • <strong>Classic PAT:</strong> <code>repo</code> scope<br>
+                • <strong>Fine-grained PAT:</strong> Repository security advisories permission set to <strong>Read and write</strong>
               </p>
             </div>
           `;
@@ -503,10 +513,11 @@
           errDetail = 'Check: write access to repo? Token expired or invalid?';
           errAction = `
             <div style="margin-top: 16px; padding: 16px; background: rgba(248,81,73,0.1); border-radius: 6px; border: 1px solid #f85149;">
-              <strong>🔑 Token Issue:</strong> The PAT may be invalid, expired, or missing <code>repo</code> scope.
+              <strong>🔑 Token Issue:</strong> The PAT may be invalid, expired, or missing required permissions.
               <ol style="margin: 12px 0; padding-left: 20px; font-size: 13px;">
                 <li>Verify PAT at <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a></li>
-                <li>Ensure <code>repo</code> scope is checked</li>
+                <li>Ensure <strong>Classic PAT</strong> has <code>repo</code> scope</li>
+                <li>Ensure <strong>Fine-grained PAT</strong> has Repository security advisories permission set to <strong>Read and write</strong></li>
                 <li>Regenerate token if expired</li>
                 <li>Re-enter in extension popup</li>
               </ol>
@@ -692,7 +703,12 @@
 
   async function updateAdvisoryCredits(ghsaId, credits, repoPath) {
     const url = `https://api.github.com/repos/${repoPath}/security-advisories/${ghsaId}`;
-    return apiRequest('PATCH', url, { credits });
+    // Transform credits: API expects array of objects with login and type
+    const apiCredits = credits.map(c => ({
+      login: c.user,
+      type: c.type
+    }));
+    return apiRequest('PATCH', url, { credits: apiCredits });
   }
 
   async function closeAdvisory(ghsaId, repoPath) {
