@@ -250,4 +250,4 @@ https://github.com/owner/repo/security/advisories?state=triage&ghsa-smash-debug=
 
 ## License
 
-MIT — see [LICENSE](LICENSE) if present, otherwise standard MIT terms apply.
+MIT — see [MIT](MIT) for the license.
