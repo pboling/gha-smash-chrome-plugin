@@ -118,7 +118,8 @@ async function checkContentScript() {
   }
 
   const isAdvisoryPage = tab.url?.includes('/security/advisories');
-  pageUrlEl.textContent = tab.url ? new URL(tab.url).pathname : '—';
+  const urlObj = tab.url ? new URL(tab.url) : null;
+  pageUrlEl.textContent = urlObj ? urlObj.pathname : '—';
 
   if (!isAdvisoryPage) {
     updateStatus(false, 'Not on an advisories page');
@@ -129,8 +130,16 @@ async function checkContentScript() {
   try {
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' });
     if (response && response.selectedCount !== undefined) {
-      updateStatus(true, 'Active on this page');
-      selectedCountEl.textContent = response.selectedCount;
+      const state = response.state || 'triage';
+      const stateAllowed = response.stateAllowed !== false;
+      
+      if (!stateAllowed) {
+        updateStatus(false, `Disabled: ${state} advisories cannot be merged`);
+        selectedCountEl.textContent = '—';
+      } else {
+        updateStatus(true, `Active (${state})`);
+        selectedCountEl.textContent = response.selectedCount;
+      }
     } else {
       updateStatus(true, 'Active (no selection)');
       selectedCountEl.textContent = '0';
@@ -152,6 +161,10 @@ chrome.runtime.onMessage.addListener((message) => {
     } else {
       updateStatus(true, 'Active on this page');
     }
+  }
+  // Handle state change notifications from content script
+  if (message.type === 'STATE_CHANGED') {
+    checkContentScript();
   }
 });
 

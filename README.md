@@ -5,9 +5,11 @@ Chrome extension to merge duplicate GitHub Security Advisories with credit roll-
 ## Screenshots
 
 ### Advisory List with Checkboxes
+
 ![Advisory List with Checkboxes](assets/GHA-Smash-checkboxes.png)
 
 ### Merge Confirmation Modal
+
 ![Merge Confirmation Modal](assets/GHA-Smash-modal.png)
 
 ## Install
@@ -26,13 +28,14 @@ cd gha-smash-chrome-plugin
 
 ### From Chrome Web Store
 
-*Not yet published*
+_Not yet published_
 
 ## Setup: GitHub Personal Access Token (Required)
 
 Before using the extension, you must configure a PAT with the correct permissions.
 
 ### Option 1: Classic PAT
+
 1. Go to <https://github.com/settings/tokens>
 2. Click **Generate new token (classic)**
 3. Name it (e.g., "GH Advisory Smash")
@@ -40,12 +43,14 @@ Before using the extension, you must configure a PAT with the correct permission
 5. Generate and copy the token
 
 ### Option 2: Fine-Grained PAT (Recommended)
+
 1. Go to <https://github.com/settings/personal-access-tokens/new>
 2. Name it, set expiration, select target repository
 3. **Repository permissions → Security advisories → Read and write**
 4. Generate and copy the token
 
 ### Configure in Extension
+
 1. Click the extension icon in your Chrome toolbar
 2. Paste the token in the **GitHub API Token** field
 3. Click **Save**
@@ -55,34 +60,36 @@ The extension stores the token in `chrome.storage.sync` (encrypted, synced acros
 ## Usage
 
 1. Navigate to any repository's **Security Advisories** page:
+
    ```
    https://github.com/<owner>/<repo>/security/advisories
    ```
 
 2. **Select state** using the tabs at the top:
-   - **Triage** (default): `?state=triage`
-   - **Draft**: `?state=draft`
-   - **Published**: `?state=published`
-   - **Closed**: `?state=closed`
+   - **Triage** (default): `?state=triage` — ✅ **Supported**
+   - **Draft**: `?state=draft` — ✅ **Supported**
+   - **Closed**: `?state=closed` — ✅ **Supported**
+   - **Published**: `?state=published` — ❌ **Disabled** (published advisories cannot be merged/closed via API)
 
-3. **Checkboxes** appear next to each advisory row in the active state
+3. **Checkboxes** appear next to each advisory row in the active state (hidden for Published)
 
 4. **Select 2+ duplicate advisories** — the first selected becomes the **primary** (stays open, receives merged credits)
 
-5. Click the **Smash (N)** button in the header (appears next to the segmented control)
+5. Click the **Smash (N)** button in the header (appears next to the segmented control; hidden for Published)
 
 6. **Confirm modal** shows:
    - Primary advisory (kept open) with its current credits
    - Duplicate advisories to be closed with their credits
    - Merged credits that will be applied to the primary
-   - Extension version (e.g., `v0.2.19`)
+   - Extension version (e.g., `v0.2.21`)
 
 7. Click **Smash** to execute:
    - Primary advisory credits updated with combined credits from all selected
    - Duplicate advisories closed via GitHub API
 
 ### Cross-State Merging
-The extension **only merges advisories within the same state** (triage, draft, published, or closed). To merge advisories across states:
+
+The extension **only merges advisories within the same state** (triage, draft, or closed). To merge advisories across states:
 
 1. Move the advisories into the same state first (via GitHub UI or API)
 2. Refresh the page
@@ -90,17 +97,19 @@ The extension **only merges advisories within the same state** (triage, draft, p
 
 Selections are **persisted per state** — switching tabs preserves each state's selection independently. After a successful smash, the selection for that state is cleared.
 
+**Note:** Published advisories are explicitly excluded — they cannot be merged or closed via the GitHub REST API. The plugin automatically disables itself on the Published tab.
+
 ## How It Works
 
 ### Architecture
 
-| Component | Role |
-|-----------|------|
-| `manifest.json` | Manifest V3 config, host permissions, content script registration |
-| `background.js` | Service worker — executes GitHub API calls (avoids CORS), PAT authentication |
-| `content.js` | Injected into advisory pages — UI injection, selection management, merge orchestration |
-| `content.css` | Styles for checkboxes, button, modal, row highlighting |
-| `popup.html/js` | Extension popup showing active status, PAT configuration, selection count |
+| Component       | Role                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------- |
+| `manifest.json` | Manifest V3 config, host permissions, content script registration                      |
+| `background.js` | Service worker — executes GitHub API calls (avoids CORS), PAT authentication           |
+| `content.js`    | Injected into advisory pages — UI injection, selection management, merge orchestration |
+| `content.css`   | Styles for checkboxes, button, modal, row highlighting                                 |
+| `popup.html/js` | Extension popup showing active status, PAT configuration, selection count              |
 
 ### Data Flow
 
@@ -136,13 +145,49 @@ Page reloads to show updated state (selection cleared for that state)
 
 ## Permissions
 
-| Permission | Purpose |
-|------------|---------|
-| `activeTab` | Access current tab when popup opened |
-| `scripting` | Inject content script (redundant with manifest content_scripts, kept for flexibility) |
-| `storage` | Store PAT in `chrome.storage.sync` |
-| `https://github.com/*/security/advisories*` | Content script match pattern; fetch advisory pages for credit parsing |
+| Permission                                             | Purpose                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `activeTab`                                            | Access current tab when popup opened                                                   |
+| `scripting`                                            | Inject content script (redundant with manifest content_scripts, kept for flexibility)  |
+| `storage`                                              | Store PAT in `chrome.storage.sync`                                                     |
+| `https://github.com/*/security/advisories*`            | Content script match pattern; fetch advisory pages for credit parsing                  |
 | `https://api.github.com/repos/*/security-advisories/*` | Background service worker calls GitHub REST API to update credits and close advisories |
+
+## Security
+
+Current PAT Storage:
+
+Layer: User Input
+Details: Popup (popup.html/js) — text input, saved via chrome.storage.sync.set({ github_pat: token })
+────────────────────────────────────────
+Layer: Storage
+Details: chrome.storage.sync — encrypted at rest, synced across your Chrome profiles
+────────────────────────────────────────
+Layer: Background Access
+Details: background.js reads via chrome.storage.sync.get(['github_pat']) with 30s in-memory cache
+────────────────────────────────────────
+Layer: Transmission
+Details: Sent as Authorization: Bearer <pat> header to api.github.com (HTTPS only)
+
+Safety Assessment:
+
+Aspect: Encryption at rest
+Status: ✅ Chrome encrypts storage.sync data
+────────────────────────────────────────
+Aspect: Sync scope
+Status: ✅ Only your signed-in Chrome profiles (not sent to Google in plaintext)
+────────────────────────────────────────
+Aspect: In-memory exposure
+Status: ⚠️ 30s cache in service worker memory — cleared on extension reload/browser restart
+────────────────────────────────────────
+Aspect: Console leakage
+Status: ✅ PAT never logged (debug logs only show "found"/"none")
+────────────────────────────────────────
+Aspect: Network exposure
+Status: ✅ Only sent to api.github.com over HTTPS with host_permissions
+────────────────────────────────────────
+Aspect: Extension compromise
+Status: ⚠️ If extension code is malicious, it could exfiltrate — but code is open source, and you can read it. Please do report bugs!
 
 ## Development
 
@@ -181,6 +226,7 @@ gha-smash-chrome-plugin/
 ## Debug Mode
 
 Add `?ghsa-smash-debug=true` to the URL for verbose console logging:
+
 ```
 https://github.com/owner/repo/security/advisories?state=triage&ghsa-smash-debug=true
 ```

@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-    const EXTENSION_VERSION = '0.2.20';
+    const EXTENSION_VERSION = '0.2.21';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
@@ -45,6 +45,13 @@
     return params.get('state') || 'triage';
   }
 
+  // Check if current state allows merging
+  // Published advisories cannot be merged/closed via API
+  function isStateAllowed() {
+    const state = getCurrentState();
+    return state !== 'published';
+  }
+
   function getStateStorageKeys() {
     const state = getCurrentState();
     return {
@@ -68,6 +75,7 @@
   let primaryAdvisoryId = null; // Explicitly stored primary GHSA ID
   let smashButton = null;
   let checkboxColumnAdded = false;
+  let stateAllowed = true;
 
   function getGhsaIdFromRow(row) {
     const link = row.querySelector(SELECTORS.advisoryTitleLink);
@@ -310,6 +318,14 @@
   }
 
   async function mergeAdvisories(primaryId, duplicateIds) {
+    // Block merging on published state
+    if (!isStateAllowed()) {
+      const errorMsg = 'Merging is not allowed for published advisories. Switch to triage, draft, or closed state.';
+      debugLog('Blocked: published state');
+      alert(errorMsg);
+      return false;
+    }
+
     const pathParts = window.location.pathname.split('/');
     // Remove leading empty string from split
     if (pathParts[0] === '') pathParts.shift();
@@ -747,6 +763,7 @@
   // --- UI Injection ---
 
   function injectCheckboxColumn() {
+    if (!stateAllowed) return;
     const list = document.querySelector(SELECTORS.advisoryList);
     if (!list) return;
 
@@ -793,6 +810,7 @@
   }
 
   function injectSmashButton() {
+    if (!stateAllowed) return;
     if (smashButton) return;
 
     // Find the Box-header where the segmented control lives
@@ -884,6 +902,15 @@
   // --- Initialization ---
 
   function init() {
+    // Check if current state allows merging
+    stateAllowed = isStateAllowed();
+    // Notify popup of initial state
+    chrome.runtime.sendMessage({ type: 'STATE_CHANGED', state: getCurrentState(), stateAllowed });
+    if (!stateAllowed) {
+      console.log('[GH Advisory Smash] Published state detected — plugin disabled');
+      return;
+    }
+
     loadSelection();
 
     // Watch for state changes (tab switches) - GitHub uses Turbo/PJAX
@@ -892,12 +919,31 @@
       const currentState = getCurrentState();
       if (currentState !== lastState) {
         console.log('[GH Advisory Smash] State changed:', lastState, '->', currentState);
+        // Check if new state is allowed
+        const newStateAllowed = isStateAllowed();
         // Clear selection for the old state
         clearSelectionForState(lastState);
         // Reset current selection
         selectedAdvisories.clear();
         primaryAdvisoryId = null;
         lastState = currentState;
+        // Update state allowed flag
+        stateAllowed = newStateAllowed;
+        // Notify popup of state change
+        chrome.runtime.sendMessage({ type: 'STATE_CHANGED', state: currentState, stateAllowed: newStateAllowed });
+        if (!stateAllowed) {
+          console.log('[GH Advisory Smash] Published state detected — plugin disabled');
+          // Remove UI elements if they exist
+          if (smashButton) {
+            smashButton.remove();
+            smashButton = null;
+          }
+          // Remove checkboxes
+          document.querySelectorAll('.gha-smash-checkbox').forEach(cb => cb.remove());
+          document.querySelectorAll('.gha-smash-primary-badge').forEach(b => b.remove());
+          checkboxColumnAdded = false;
+          return;
+        }
         // Reload selection for new state
         loadSelection();
         // Update UI
@@ -918,7 +964,11 @@
     // Handle messages from popup
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'GET_STATUS') {
-        sendResponse({ selectedCount: selectedAdvisories.size });
+        sendResponse({
+          selectedCount: selectedAdvisories.size,
+          state: getCurrentState(),
+          stateAllowed: isStateAllowed()
+        });
         return true;
       }
       if (message.type === 'DEBUG_LOG' && DEBUG) {
