@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-  const EXTENSION_VERSION = '0.2.14';
+  const EXTENSION_VERSION = '0.2.15';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
@@ -477,6 +477,23 @@
               </ol>
               <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 8px 0 0;">
                 Create PAT at: <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a> (select <code>repo</code> scope)
+              </p>
+            </div>
+          `;
+        } else if (e.message.startsWith('PAT_EXPIRED:')) {
+          errDetail = 'GitHub Personal Access Token has expired or is invalid.';
+          errAction = `
+            <div style="margin-top: 16px; padding: 16px; background: rgba(248,81,73,0.1); border-radius: 6px; border: 1px solid #f85149;">
+              <strong>🔑 Token Expired:</strong> Your PAT has expired or was revoked.
+              <ol style="margin: 12px 0; padding-left: 20px; font-size: 13px;">
+                <li>Go to <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a></li>
+                <li>Regenerate or create a new PAT with <code>repo</code> scope</li>
+                <li>Open extension popup and paste the new PAT</li>
+                <li>Click <strong>Save</strong></li>
+                <li>Click <strong>Smash</strong> again to retry</li>
+              </ol>
+              <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 8px 0 0;">
+                The old token has been cleared from the extension automatically.
               </p>
             </div>
           `;

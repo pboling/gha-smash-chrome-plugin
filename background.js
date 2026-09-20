@@ -117,12 +117,33 @@ async function handleApiRequest(message, sender) {
     const err = await response.json().catch(() => ({}));
     const errorMsg = `${err.message || response.statusText} (${response.status})`;
     if (DEBUG) console.log('[BG] API error:', errorMsg);
+    
+    // Check for expired/invalid token (401)
+    if (response.status === 401) {
+      // Clear cached PAT so next CHECK_PAT returns false
+      await clearPat();
+      if (DEBUG) console.log('[BG] PAT expired/invalid, cleared from storage');
+      throw new Error('PAT_EXPIRED: GitHub Personal Access Token has expired or is invalid. Please create a new PAT with "repo" scope.');
+    }
+    
     throw new Error(errorMsg);
   }
 
   const result = await response.json();
   if (DEBUG) console.log('[BG] API success:', result);
   return result;
+}
+
+// Clear PAT from cache and storage
+async function clearPat() {
+  patCache = null;
+  patCacheTime = 0;
+  try {
+    await chrome.storage.sync.remove(['github_pat']);
+    if (DEBUG) console.log('[BG] PAT cleared from storage');
+  } catch (e) {
+    if (DEBUG) console.log('[BG] Error clearing PAT:', e.message);
+  }
 }
 
 // Listen for tab updates to clear stale tokens
