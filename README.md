@@ -2,6 +2,14 @@
 
 Chrome extension to merge duplicate GitHub Security Advisories with credit roll-up.
 
+## Screenshots
+
+### Advisory List with Checkboxes
+![Advisory List with Checkboxes](assets/GHA-Smash-checkboxes.png)
+
+### Merge Confirmation Modal
+![Merge Confirmation Modal](assets/GHA-Smash-modal.png)
+
 ## Install
 
 ### From Source (Development)
@@ -108,6 +116,7 @@ gha-smash-chrome-plugin/
 ├── popup.html          # Popup UI
 ├── popup.js            # Popup logic
 ├── icons/              # 16/32/48/128px icons
+├── assets/             # Screenshots for README
 └── README.md           # This file
 ```
 
