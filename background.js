@@ -43,7 +43,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'API_REQUEST': {
       // Forward API request to GitHub API from background (avoids CORS)
-      handleApiRequest(message, sender.tab?.id).then(sendResponse).catch(err => {
+      handleApiRequest(message, sender).then(sendResponse).catch(err => {
         if (DEBUG) console.log('[BG] API_REQUEST error:', err.message);
         sendResponse({ error: err.message });
       });
@@ -57,11 +57,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Handle API requests from content script
-async function handleApiRequest(message, tabId) {
+async function handleApiRequest(message, sender) {
   if (DEBUG) console.log('[BG] Handling API request:', message.payload);
   const { method, url, body, headers = {} } = message.payload;
 
   // Get CSRF token for this tab if available
+  const tabId = sender?.tab?.id;
   const csrfToken = tabId ? csrfTokens.get(tabId) : null;
   if (DEBUG) console.log('[BG] CSRF token for tab', tabId, csrfToken ? 'found' : 'none');
 
