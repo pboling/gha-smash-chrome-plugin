@@ -10,6 +10,27 @@ chrome.runtime.onInstalled.addListener(() => {
 // Store CSRF tokens per tab
 const csrfTokens = new Map();
 
+// Cache for PAT (refreshed periodically)
+let patCache = null;
+let patCacheTime = 0;
+
+async function getPat() {
+  // Cache for 30 seconds
+  const now = Date.now();
+  if (patCache && now - patCacheTime < 30000) {
+    return patCache;
+  }
+  try {
+    const result = await chrome.storage.sync.get(['github_pat']);
+    patCache = result.github_pat || null;
+    patCacheTime = now;
+    return patCache;
+  } catch (e) {
+    if (DEBUG) console.log('[BG] Error loading PAT:', e.message);
+    return null;
+  }
+}
+
 // Handle messages from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (DEBUG) console.log('[BG] Received message:', message.type, sender.tab?.id);
@@ -61,7 +82,11 @@ async function handleApiRequest(message, sender) {
   if (DEBUG) console.log('[BG] Handling API request:', message.payload);
   const { method, url, body, headers = {} } = message.payload;
 
-  // Get CSRF token for this tab if available
+  // Get PAT (Personal Access Token) - primary auth for REST API
+  const pat = await getPat();
+  if (DEBUG) console.log('[BG] PAT for API:', pat ? 'found' : 'none');
+
+  // Get CSRF token for this tab if available (fallback)
   const tabId = sender?.tab?.id;
   const csrfToken = tabId ? csrfTokens.get(tabId) : null;
   if (DEBUG) console.log('[BG] CSRF token for tab', tabId, csrfToken ? 'found' : 'none');
@@ -73,12 +98,18 @@ async function handleApiRequest(message, sender) {
     ...headers
   };
 
-  if (csrfToken) {
-    // Try multiple auth approaches for GitHub REST API
+  // Priority: PAT > CSRF token
+  if (pat) {
+    requestHeaders['Authorization'] = `Bearer ${pat}`;
+    if (DEBUG) console.log('[BG] Using PAT for authentication');
+  } else if (csrfToken) {
+    // Fallback: try CSRF/fetch-nonce
     requestHeaders['GitHub-Nonce'] = csrfToken;
     requestHeaders['X-CSRF-Token'] = csrfToken;
-    // Also try as Bearer token (some APIs accept this)
     requestHeaders['Authorization'] = `Bearer ${csrfToken}`;
+    if (DEBUG) console.log('[BG] Using fetch-nonce as fallback');
+  } else {
+    if (DEBUG) console.log('[BG] No authentication available');
   }
 
   const options = {

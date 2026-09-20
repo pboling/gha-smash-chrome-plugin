@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "GH Advisory Smash",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Merge duplicate GitHub Security Advisories with credit roll-up",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://github.com/*/security/advisories*", "https://api.github.com/repos/*/security-advisories/*"],
   "content_scripts": [
     {

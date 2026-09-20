@@ -1,17 +1,63 @@
 /**
  * GH Advisory Smash - Popup Script
  * Communicates with content script to show status and selected count
+ * Manages PAT (Personal Access Token) for GitHub API authentication
  */
 
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const pageUrlEl = document.getElementById('pageUrl');
 const selectedCountEl = document.getElementById('selectedCount');
+const patInput = document.getElementById('patInput');
+const patSaveBtn = document.getElementById('patSaveBtn');
+const patStatus = document.getElementById('patStatus');
 
 function updateStatus(active, message) {
   statusDot.style.background = active ? '#238636' : '#f85149';
   statusText.textContent = message;
 }
+
+function setPatStatus(message, type = 'muted') {
+  patStatus.textContent = message;
+  patStatus.className = 'pat-status ' + type;
+}
+
+async function loadPat() {
+  try {
+    const result = await chrome.storage.sync.get(['github_pat']);
+    if (result.github_pat) {
+      patInput.value = result.github_pat;
+      setPatStatus('Token saved ✓', 'valid');
+    } else {
+      setPatStatus('No token saved. Create a PAT with "repo" scope at github.com/settings/tokens', 'muted');
+    }
+  } catch (e) {
+    setPatStatus('Error loading token', 'invalid');
+  }
+}
+
+async function savePat() {
+  const token = patInput.value.trim();
+  if (!token) {
+    setPatStatus('Please enter a token', 'invalid');
+    return;
+  }
+  if (!token.startsWith('ghp_') && !token.startsWith('github_pat_')) {
+    setPatStatus('Token should start with ghp_ or github_pat_', 'invalid');
+    return;
+  }
+  try {
+    await chrome.storage.sync.set({ github_pat: token });
+    setPatStatus('Token saved ✓', 'valid');
+  } catch (e) {
+    setPatStatus('Error saving token', 'invalid');
+  }
+}
+
+patSaveBtn.addEventListener('click', savePat);
+patInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') savePat();
+});
 
 async function getTabInfo() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -64,7 +110,8 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-// Initial check
+// Initial load
+loadPat();
 checkContentScript();
 
 // Refresh periodically
