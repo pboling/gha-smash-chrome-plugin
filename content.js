@@ -7,7 +7,7 @@
   'use strict';
 
   // Extension version (synced with manifest.json)
-  const EXTENSION_VERSION = '0.2.11';
+  const EXTENSION_VERSION = '0.2.12';
 
   // --- Debug ---
   const DEBUG = new URLSearchParams(window.location.search).has('ghsa-smash-debug');
@@ -86,6 +86,14 @@
     } else {
       sessionStorage.removeItem(PRIMARY_KEY);
     }
+  }
+
+  async function checkPatConfigured() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'GET_PAT_CONFIGURED' }, (response) => {
+        resolve(response && response.configured);
+      });
+    });
   }
 
   function loadSelection() {
@@ -282,6 +290,14 @@
     const repoPath = pathParts.slice(0, 2).join('/');
     debugLog('repoPath extracted:', { repoPath, pathname: window.location.pathname });
 
+    // Pre-flight check: verify PAT is configured before any API calls
+    const hasPat = await checkPatConfigured();
+    if (!hasPat) {
+      debugLog('Pre-flight: No PAT configured, aborting');
+      alert('GitHub Personal Access Token required. Save a PAT with "repo" scope in the extension popup, then retry.');
+      return false;
+    }
+
     const ids = [primaryId, ...duplicateIds];
 
     // Create and show live modal immediately
@@ -382,6 +398,48 @@
 
     // Execute the actual merge
     async function executeMerge(duplicateDetails, mergedCredits) {
+      // Check PAT availability BEFORE making any API calls
+      const hasPat = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: 'CHECK_PAT' }, response => {
+          resolve(response?.hasPat === true);
+        });
+      });
+      
+      if (!hasPat) {
+        const errorMsg = 'NO_PAT: GitHub Personal Access Token required. Save a PAT with "repo" scope in the extension popup.';
+        log('✗ Merge failed: ' + errorMsg, 'error');
+        
+        confirmSection.innerHTML = `
+          <div style="color: #d29922; padding: 16px; background: rgba(210,153,34,0.1); border-radius: 6px; border: 1px solid #d29922;">
+            <strong>🔑 Action Required:</strong> No GitHub PAT configured.
+            <ol style="margin: 12px 0; padding-left: 20px; font-size: 13px;">
+              <li>Open extension popup (click extension icon in toolbar)</li>
+              <li>Paste your PAT in the "GitHub API Token" field</li>
+              <li>Click <strong>Save</strong></li>
+              <li>Retry the Smash operation</li>
+            </ol>
+            <p style="font-size: 12px; color: var(--color-fg-muted, #8b949e); margin: 8px 0 0;">
+              Create PAT at: <a href="https://github.com/settings/tokens" target="_blank" style="color: #58a6ff;">github.com/settings/tokens</a> (select <code>repo</code> scope)
+            </p>
+          </div>
+          <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px;">
+            <button id="gha-smash-close-error" style="
+              padding: 8px 16px;
+              border: none;
+              background: var(--color-btn-primary-bg, #238636);
+              color: white;
+              border-radius: 6px;
+              cursor: pointer;
+              font-size: 13px;
+              font-weight: 600;
+            ">Close</button>
+          </div>
+        `;
+        confirmSection.querySelector('#gha-smash-close-error').onclick = () => modal.remove();
+        cancelBtn.disabled = false;
+        return false;
+      }
+      
       confirmSection.innerHTML = '<div style="text-align:center; padding: 20px;">Executing merge...</div>';
       confirmBtn.disabled = true;
       cancelBtn.disabled = true;

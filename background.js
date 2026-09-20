@@ -41,6 +41,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
+    case 'CHECK_PAT': {
+      // Check if PAT is configured without making API calls
+      getPat().then(pat => {
+        sendResponse({ hasPat: !!pat });
+      });
+      return true; // async response
+    }
+
     case 'API_REQUEST': {
       // Forward API request to GitHub API from background (avoids CORS)
       handleApiRequest(message, sender).then(sendResponse).catch(err => {
