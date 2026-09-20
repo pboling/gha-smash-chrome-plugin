@@ -74,8 +74,11 @@ async function handleApiRequest(message, sender) {
   };
 
   if (csrfToken) {
-    // GitHub uses GitHub-Nonce header for fetch-nonce
+    // Try multiple auth approaches for GitHub REST API
     requestHeaders['GitHub-Nonce'] = csrfToken;
+    requestHeaders['X-CSRF-Token'] = csrfToken;
+    // Also try as Bearer token (some APIs accept this)
+    requestHeaders['Authorization'] = `Bearer ${csrfToken}`;
   }
 
   const options = {
