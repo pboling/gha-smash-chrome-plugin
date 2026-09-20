@@ -318,44 +318,29 @@
     }
   }
 
+  async function apiRequest(method, url, body) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        type: 'API_REQUEST',
+        payload: { method, url, body }
+      }, (response) => {
+        if (response?.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response);
+        }
+      });
+    });
+  }
+
   async function updateAdvisoryCredits(ghsaId, credits, repoPath) {
     const url = `https://api.github.com/repos/${repoPath}/security-advisories/${ghsaId}`;
-    const response = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-        'X-GitHub-Api-Version': '2022-11-28'
-      },
-      body: JSON.stringify({ credits })
-    }, 30000);
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(`Failed to update credits: ${err.message || response.statusText}`);
-    }
-    return response.json();
+    return apiRequest('PATCH', url, { credits });
   }
 
   async function closeAdvisory(ghsaId, repoPath) {
     const url = `https://api.github.com/repos/${repoPath}/security-advisories/${ghsaId}`;
-    const response = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      credentials: 'include',
-      headers: {
-        'Accept': 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-        'X-GitHub-Api-Version': '2022-11-28'
-      },
-      body: JSON.stringify({ state: 'closed' })
-    }, 30000);
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(`Failed to close ${ghsaId}: ${err.message || response.statusText}`);
-    }
-    return response.json();
+    return apiRequest('PATCH', url, { state: 'closed' });
   }
 
   function showConfirmModal({ primaryId, duplicateIds, mergedCredits, duplicateDetails }) {
