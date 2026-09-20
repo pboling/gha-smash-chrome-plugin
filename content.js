@@ -173,6 +173,20 @@
     }
   }
 
+  function extractUsernameFromLink(link) {
+    // Try textContent first
+    const text = link.textContent.trim();
+    if (text) return text.replace('@', '');
+
+    // Fallback: parse from href="/username"
+    const href = link.getAttribute('href');
+    if (href?.startsWith('/')) {
+      const match = href.match(/^\/([^/]+)/);
+      if (match) return match[1];
+    }
+    return '';
+  }
+
   async function fetchAdvisoryDetails(ghsaId) {
     const repoPath = window.location.pathname.split('/').slice(0, 3).join('/');
     const url = `https://github.com/${repoPath}/security/advisories/${ghsaId}`;
@@ -194,7 +208,7 @@
         const typeEl = el.querySelector('[data-credit-type], .credit-type');
         if (userLink) {
           credits.push({
-            user: userLink.textContent.trim().replace('@', ''),
+            user: extractUsernameFromLink(userLink),
             type: typeEl ? typeEl.textContent.trim().toLowerCase() : 'reporter'
           });
         }
@@ -213,13 +227,14 @@
                 let type = 'reporter';
                 if (text.includes('analyzer')) type = 'analyzer';
                 else if (text.includes('remediation')) type = 'remediation';
-                credits.push({ user: userLink.textContent.trim().replace('@', ''), type });
+                credits.push({ user: extractUsernameFromLink(userLink), type });
               }
             });
           }
         }
       });
 
+      console.log(`[GH Advisory Smash] Fetched ${ghsaId}:`, credits);
       return { ghsaId, credits };
     } catch (e) {
       console.warn(`[GH Advisory Smash] Failed to fetch ${ghsaId}:`, e);
