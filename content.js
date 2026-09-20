@@ -284,6 +284,7 @@
 
     const logEl = modal.querySelector('#gha-smash-log');
     const confirmSection = modal.querySelector('#gha-smash-confirm-section');
+    const footerEl = modal.querySelector('#gha-smash-footer');
     const confirmBtn = modal.querySelector('#gha-smash-confirm');
     const cancelBtn = modal.querySelector('#gha-smash-cancel');
 
@@ -305,8 +306,9 @@
     }
 
     function showConfirm(duplicateDetails, mergedCredits) {
-      // Hide log, show confirmation summary
+      // Hide log and footer, show confirmation summary
       logEl.style.display = 'none';
+      footerEl.style.display = 'none';
       confirmSection.style.display = 'block';
 
       const creditsHtml = mergedCredits.map(c =>
@@ -525,7 +527,7 @@
 
         <div id="gha-smash-confirm-section" style="display: none;"></div>
 
-        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <div id="gha-smash-footer" style="display: flex; gap: 12px; justify-content: flex-end;">
           <button id="gha-smash-cancel" style="
             padding: 8px 16px;
             border: 1px solid var(--color-border-default, #30363d);
