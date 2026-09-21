@@ -155,39 +155,25 @@ Page reloads to show updated state (selection cleared for that state)
 
 ## Security
 
-Current PAT Storage:
+### PAT Storage Architecture
 
-Layer: User Input
-Details: Popup (popup.html/js) — text input, saved via chrome.storage.sync.set({ github_pat: token })
-────────────────────────────────────────
-Layer: Storage
-Details: chrome.storage.sync — encrypted at rest, synced across your Chrome profiles
-────────────────────────────────────────
-Layer: Background Access
-Details: background.js reads via chrome.storage.sync.get(['github_pat']) with 30s in-memory cache
-────────────────────────────────────────
-Layer: Transmission
-Details: Sent as Authorization: Bearer <pat> header to api.github.com (HTTPS only)
+| Layer | Details |
+|-------|---------|
+| **User Input** | Popup (`popup.html/js`) — text input, saved via `chrome.storage.sync.set({ github_pat: token })` |
+| **Storage** | `chrome.storage.sync` — encrypted at rest, synced across your Chrome profiles |
+| **Background Access** | `background.js` reads via `chrome.storage.sync.get(['github_pat'])` with 30s in-memory cache |
+| **Transmission** | Sent as `Authorization: Bearer ***` header to `api.github.com` (HTTPS only) |
 
-Safety Assessment:
+### Safety Assessment
 
-Aspect: Encryption at rest
-Status: ✅ Chrome encrypts storage.sync data
-────────────────────────────────────────
-Aspect: Sync scope
-Status: ✅ Only your signed-in Chrome profiles (not sent to Google in plaintext)
-────────────────────────────────────────
-Aspect: In-memory exposure
-Status: ⚠️ 30s cache in service worker memory — cleared on extension reload/browser restart
-────────────────────────────────────────
-Aspect: Console leakage
-Status: ✅ PAT never logged (debug logs only show "found"/"none")
-────────────────────────────────────────
-Aspect: Network exposure
-Status: ✅ Only sent to api.github.com over HTTPS with host_permissions
-────────────────────────────────────────
-Aspect: Extension compromise
-Status: ⚠️ If extension code is malicious, it could exfiltrate — but code is open source, and you can read it. Please do report bugs!
+| Aspect | Status |
+|--------|--------|
+| Encryption at rest | ✅ Chrome encrypts `storage.sync` data |
+| Sync scope | ✅ Only your signed-in Chrome profiles (not sent to Google in plaintext) |
+| In-memory exposure | ⚠️ 30s cache in service worker memory — cleared on extension reload/browser restart |
+| Console leakage | ✅ PAT never logged (debug logs only show "found"/"none") |
+| Network exposure | ✅ Only sent to `api.github.com` over HTTPS with `host_permissions` |
+| Extension compromise | ⚠️ If extension code is malicious, it could exfiltrate — but code is open source and auditable. Please report bugs! |
 
 ## Development
 
